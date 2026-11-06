@@ -1,0 +1,44 @@
+@startuml
+skinparam shadowing false
+
+actor Navegador
+
+package "sistema-pedidos-springboot (Spring Boot, 8081)" {
+  rectangle "Spring Security\n(roles OPERADOR / CONSULTA + CSRF)" as Security
+  rectangle "DispatcherServlet" as Dispatcher
+  rectangle "Controller JSP\nPedidoController y\nPedidoReporteWebController" as ControllerJsp
+  rectangle "RestController\nPedidoReporteController" as ControllerRest
+  rectangle "PedidoService" as PedidoService
+  rectangle "PedidoReporteService\n(validaciones)" as ReporteService
+  rectangle "PedidoRepository\n(Spring Data JPA)" as JpaRepo
+  rectangle "PedidoReporteJdbcRepository\n(Spring JDBC)" as JdbcRepo
+  rectangle "InventarioRestClient" as InvClient
+}
+
+database "MySQL\n(pedidosdb)" as MySQL
+
+package "inventario-service (Jakarta EE, 8082)" {
+  rectangle "ProductoResource" as Resource
+  rectangle "InventarioService\n(@Stateless)" as InvService
+  rectangle "ProductoInventario\n(JPA)" as Producto
+}
+
+database "SQL Server\n(InventarioDB)" as SQL
+
+Navegador --> Security : HTTP
+Security --> Dispatcher
+Dispatcher --> ControllerJsp
+Dispatcher --> ControllerRest
+ControllerJsp --> PedidoService
+ControllerJsp --> ReporteService
+ControllerRest --> ReporteService
+PedidoService --> JpaRepo
+PedidoService --> InvClient
+ReporteService --> JdbcRepo
+JpaRepo --> MySQL
+JdbcRepo --> MySQL
+InvClient --> Resource : HTTP/JSON\nGET .../productos\nPOST .../reservas
+Resource --> InvService
+InvService --> Producto
+Producto --> SQL
+@enduml

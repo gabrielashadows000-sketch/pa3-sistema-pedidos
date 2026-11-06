@@ -636,47 +636,88 @@ Para ejecutar toda la suite:
 
 ---
 
-## 15. PA3: consulta y supervisión de pedidos
+15. PA3: consulta y supervisión de pedidos
 
-Módulo de solo lectura que reutiliza `PedidoReporteService` desde una vista JSP y desde una API JSON. Las dos consultas nuevas usan **Spring JDBC** (`NamedParameterJdbcTemplate`); el registro de pedidos sigue usando Spring Data JPA.
+Módulo de solo lectura que permite buscar pedidos por cliente y total mínimo, y consultar los clientes frecuentes. Funciona desde una vista JSP y desde una API JSON, y ambas reutilizan PedidoReporteService. Las dos consultas nuevas usan Spring JDBC (NamedParameterJdbcTemplate); el registro de pedidos sigue usando Spring Data JPA.
 
-### Requisitos y arranque
+Tecnologías
 
-1. Java 21, Maven y MySQL en ejecución.
-2. Crear la base de datos y el usuario con `Script_BD_usuario_MySql.sql`.
-3. Variables de entorno (opcionales; hay valores por defecto de laboratorio): `DB_URL`, `DB_USERNAME`, `DB_PASSWORD`, `PEDIDOS_OPERADOR_PASSWORD`, `PEDIDOS_CONSULTA_PASSWORD`.
-4. Orden de arranque: MySQL → `inventario-service` (puerto 8082) → este proyecto (`mvn spring-boot:run`, puerto 8081, contexto `/sistema-pedidos`).
+Java 21, Spring Boot 4.1.1, Spring MVC con JSP/JSTL, Spring Security, Spring Data JPA, Spring JDBC, MySQL (ejecución normal), H2 (solo pruebas), Maven y JUnit 5 con Mockito y MockMvc. La integración externa es inventario-service (Jakarta EE, WildFly y SQL Server).
 
-Usuarios de laboratorio (en memoria): `operador` (rol OPERADOR) y `consulta` (rol CONSULTA). Las contraseñas se definen con las variables anteriores.
+Requisitos
+JDK 21 y Maven (se incluye mvnw).
+MySQL en ejecución, con la base pedidosdb y el usuario de laboratorio spedidos_app.
+inventario-service activo en el puerto 8082 (solo para registrar pedidos; los reportes no lo necesitan).
+Base de datos
 
-### Rutas nuevas (todas GET; roles OPERADOR y CONSULTA)
+Crear la base de datos y el usuario con Script_BD_usuario_MySql.sql, o de forma equivalente con estas sentencias (reemplazar <clave-local> por la clave de laboratorio; no se incluyen claves reales en este repositorio):
 
-| Ruta | Descripción |
-|---|---|
-| `/reportes/pedidos` | Vista JSP. Parámetros opcionales: `cliente`, `totalMinimo`, `minPedidos`. |
-| `/api/v1/pedidos/busqueda-avanzada?cliente={valor}&totalMinimo={monto}` | Pedidos cuyo cliente contiene el texto y cuyo total es mayor o igual al monto, por id descendente. |
-| `/api/v1/pedidos/clientes-frecuentes?minPedidos={n}` | Por cliente con al menos `n` pedidos: `totalPedidos`, `totalUnidades`, `importeAcumulado`, `ticketPromedio`. |
+sql
+CREATE DATABASE IF NOT EXISTS pedidosdb
+CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+CREATE USER IF NOT EXISTS 'spedidos_app'@'localhost' IDENTIFIED BY '<clave-local>';
+GRANT ALL PRIVILEGES ON pedidosdb.* TO 'spedidos_app'@'localhost';
+FLUSH PRIVILEGES;
+
+La tabla pedido la crea Hibernate al iniciar la aplicación (spring.jpa.hibernate.ddl-auto=update).
+
+Variables de entorno
+
+Las credenciales no se escriben en el código; se leen de variables de entorno, con valores por defecto de laboratorio en application.properties:
+
+Variable	Uso
+DB_URL	URL JDBC de MySQL (por defecto jdbc:mysql://localhost:3306/pedidosdb)
+DB_USERNAME	Usuario de la base de datos
+DB_PASSWORD	Clave de la base de datos
+PEDIDOS_OPERADOR_PASSWORD	Clave del usuario operador
+PEDIDOS_CONSULTA_PASSWORD	Clave del usuario consulta
+
+Ejemplo en PowerShell (solo vale para esa terminal):
+
+powershell
+$env:DB_USERNAME = "<usuario>"
+$env:DB_PASSWORD = "<clave-local>"
+.\mvnw spring-boot:run
+Orden de arranque
+MySQL.
+inventario-service (puerto 8082), con mvn clean wildfly:run.
+Esta aplicación: .\mvnw spring-boot:run. Queda en http://localhost:8081/sistema-pedidos.
+Usuarios y roles de laboratorio (en memoria)
+Usuario	Rol	Permisos
+operador	OPERADOR	Consulta reportes y registra pedidos
+consulta	CONSULTA	Solo consulta; no puede registrar pedidos
+
+Las claves se definen con PEDIDOS_OPERADOR_PASSWORD y PEDIDOS_CONSULTA_PASSWORD.
+
+Rutas nuevas (todas GET; roles OPERADOR y CONSULTA)
+Ruta	Descripción
+/reportes/pedidos	Vista JSP. Parámetros opcionales: cliente, totalMinimo, minPedidos.
+/api/v1/pedidos/busqueda-avanzada?cliente={valor}&totalMinimo={monto}	Pedidos cuyo cliente contiene el texto y cuyo total es mayor o igual al monto, por id descendente.
+/api/v1/pedidos/clientes-frecuentes?minPedidos={n}	Por cliente con al menos n pedidos: totalPedidos, totalUnidades, importeAcumulado y ticketPromedio.
 
 Ejemplos:
 
-```
 GET /sistema-pedidos/api/v1/pedidos/busqueda-avanzada?cliente=Ana&totalMinimo=100
 GET /sistema-pedidos/api/v1/pedidos/clientes-frecuentes?minPedidos=2
 GET /sistema-pedidos/reportes/pedidos?cliente=Ana&totalMinimo=100&minPedidos=2
-```
 
-Validaciones (en el Service): `cliente` no vacío, `totalMinimo >= 0`, `minPedidos >= 1`. Un valor inválido responde **400** (JSON en la API; la misma vista con el mensaje de error en la JSP).
+Validaciones (en el Service): cliente no vacío, totalMinimo >= 0 y minPedidos >= 1. Un valor inválido responde 400 (JSON en la API; la misma vista con el mensaje de error en la JSP) y no ejecuta ninguna consulta SQL.
 
-### Seguridad
+Seguridad
 
-`GET /reportes/**` y los dos endpoints nuevos exigen OPERADOR o CONSULTA; un usuario anónimo es redirigido al login. `POST /pedidos` sigue siendo exclusivo de OPERADOR y CSRF permanece activo.
+GET /reportes/** y los dos endpoints nuevos exigen el rol OPERADOR o CONSULTA; un usuario anónimo es redirigido al login. POST /pedidos es exclusivo de OPERADOR y la protección CSRF permanece activa.
 
-### Pruebas
+Pruebas
 
-`mvn test` (H2 en memoria, perfil `test`). Pruebas nuevas de la PA3: `PedidoReporteJdbcRepositoryPa3Test`, `PedidoReporteServiceImplPa3Test`, `PedidoReporteControllerPa3Test` y `PedidoReporteSecurityPa3IntegrationTest`.
+Se ejecutan con H2 en memoria (perfil test):
 
-### Limitaciones
+.\mvnw test
+.\mvnw test -Dtest="*Pa3*"
 
-- La búsqueda por cliente es parcial y sin distinguir mayúsculas; los caracteres `%` y `_` escritos por el usuario actúan como comodines de `LIKE`.
-- Los usuarios están en memoria; no hay JWT ni OAuth2.
-- Las vistas JSP no se renderizan en las pruebas con MockMvc (solo se verifica la vista lógica y el modelo).
+La primera ejecuta las 38 pruebas del proyecto. La segunda ejecuta solo las 18 pruebas nuevas de la PA3, repartidas en PedidoReporteJdbcRepositoryPa3Test, PedidoReporteServiceImplPa3Test, PedidoReporteControllerPa3Test y PedidoReporteSecurityPa3IntegrationTest.
+
+Limitaciones
+La búsqueda por cliente es parcial y no distingue mayúsculas; los caracteres % y _ escritos por el usuario actúan como comodines de LIKE.
+Los usuarios están en memoria; no hay JWT ni OAuth2.
+Un fallo de base de datos en los reportes no tiene un manejo específico y responde con un error 500.
+Las vistas JSP no se renderizan en las pruebas con MockMvc (solo se verifica la vista lógica y el modelo).
